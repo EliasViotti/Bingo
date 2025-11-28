@@ -5,6 +5,10 @@ use App\Http\Controllers\JuegoController;
 use App\Http\Controllers\TarjetaController;
 
 Route::prefix('bingo')->name('bingo.')->group(function () {
+    //vamos al inicio
+    Route::get('/inicio', function () {
+        return view('bingo.inicio');
+    })->name('inicio');
     //creamos un juego nuevo
     Route::post('/juego/crear', [JuegoController::class, 'crear'])->name('juego.crear');
 
