@@ -191,7 +191,7 @@
                 <div class="stat-card">
                     <div>Números Sorteados</div>
                     <div class="stat-number" id="total-sorteados">0</div>
-                    <div>de 75</div>
+                    <div>de 100</div>
                 </div>
                 <div class="stat-card">
                     <div>Último Número</div>
