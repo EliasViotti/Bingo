@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\JuegoController;
 use App\Http\Controllers\TarjetaController;
 
-Route::prefix('bingo')->name('bingo')->group(function () {
+Route::prefix('bingo')->name('bingo.')->group(function () {
     //creamos un juego nuevo
     Route::post('/juego/crear', [JuegoController::class, 'crear'])->name('juego.crear');
 
