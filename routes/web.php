@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\JuegoController;
 use App\Http\Controllers\TarjetaController;
 
+Route::get('/', fn() => view('bingo.inicio'));
+
 Route::prefix('bingo')->name('bingo.')->group(function () {
     //vamos al inicio
     Route::get('/inicio', function () {

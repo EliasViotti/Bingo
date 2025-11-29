@@ -184,133 +184,163 @@
     </div>
 
     <script>
-        // Datos de la tarjeta
-        const codigoJuego = '{{ $codigoJuego }}';
-        const tarjetaId = {{ $tarjeta->id }};
-        const numerosTarjeta = [
-            @foreach($tarjeta->lineas as $linea)
-                @foreach(['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8', 'n9', 'n10'] as $campo)
-                    @if($linea->$campo)
-                        {{ $linea->$campo }},
-                    @endif
+        document.addEventListener("DOMContentLoaded", () => {
+            // --- 1. CONFIGURACIÓN DE DATOS ---
+            const codigoJuego = '{{ $codigoJuego }}';
+            const tarjetaId = {{ $tarjeta->id }};
+            
+            // Blade genera los números separados por coma. 
+            // El último elemento podría dejar una coma colgando, JS lo maneja bien en arrays.
+            const numerosTarjeta = [
+                @foreach($tarjeta->lineas as $linea)
+                    @foreach(['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8', 'n9', 'n10'] as $campo)
+                        @if($linea->$campo)
+                            {{ $linea->$campo }},
+                        @endif
+                    @endforeach
                 @endforeach
-            @endforeach
-        ];
-
-        let numerosMarcados = [];
-        let juegoFinalizado = false;
-
-        // Conectar a Echo (Reverb/Pusher)
-        Echo.channel(`bingo.${codigoJuego}`)
-            .listen('.numero.sorteado', (data) => {
-                console.log('Número sorteado:', data);
-
-                // Mostrar último número
-                mostrarUltimoNumero(data.numero);
-
-                // Actualizar total de números sorteados
-                document.getElementById('total-sorteados').textContent = data.numerosSorteados.length;
-
-                // Marcar número si está en la tarjeta
-                if (numerosTarjeta.includes(data.numero)) {
-                    marcarNumero(data.numero);
+            ].map(Number); // Aseguramos que sean números (int) para comparar bien
+    
+            let numerosMarcados = [];
+            let juegoFinalizado = false;
+    
+            // --- 2. FUNCIÓN DE INICIO DIFERIDO ---
+            const iniciarConexion = () => {
+                if (!window.Echo) {
+                    // Si Echo no está listo, reintentamos en 100ms
+                    console.log("Esperando a Echo...");
+                    setTimeout(iniciarConexion, 100);
+                    return;
                 }
-
-                // Actualizar estado
-                document.getElementById('estado-juego').innerHTML =
-                    '<p style="margin: 0; color: #4caf50;">✅ Juego en progreso...</p>';
-            })
-            .listen('.juego.ganado', (data) => {
-                console.log('Juego ganado:', data);
-                juegoFinalizado = true;
-
-                if (data.tarjeta.id === tarjetaId) {
-                    mostrarModalGanador();
-                    lanzarConfetti();
-                } else {
-                    document.getElementById('estado-juego').innerHTML =
-                        `<p style="margin: 0; color: #f44336;">❌ Juego finalizado. Ganador: ${data.tarjeta.nombre}</p>`;
-                }
-            });
-
-        function mostrarUltimoNumero(numero) {
-            const container = document.getElementById('ultimo-numero-container');
-            const elemento = document.getElementById('ultimo-numero');
-
-            container.style.display = 'block';
-            elemento.textContent = numero;
-            elemento.style.animation = 'none';
-            setTimeout(() => {
+    
+                console.log("Echo detectado. Suscribiendo a:", `bingo.${codigoJuego}`);
+    
+                // --- 3. LÓGICA DE ECHO ---
+                window.Echo.channel(`bingo.${codigoJuego}`)
+                    .listen('.numero.sorteado', (data) => {
+                        console.log('Número sorteado:', data);
+                        
+                        // Convertimos a entero por seguridad
+                        const numeroSorteado = parseInt(data.numero);
+    
+                        mostrarUltimoNumero(numeroSorteado);
+                        
+                        // Actualizar contador total (con seguridad por si viene null)
+                        if(document.getElementById('total-sorteados')) {
+                            document.getElementById('total-sorteados').textContent = data.numerosSorteados?.length || 0;
+                        }
+    
+                        // IMPORTANTE: includes compara tipos exactos. Por eso usamos map(Number) arriba
+                        if (numerosTarjeta.includes(numeroSorteado)) {
+                            marcarNumero(numeroSorteado);
+                        }
+    
+                        actualizarEstadoUI(true);
+                    })
+                    .listen('.juego.ganado', (data) => {
+                        console.log('Juego ganado:', data);
+                        juegoFinalizado = true;
+    
+                        if (data.tarjeta.id === tarjetaId) {
+                            mostrarModalGanador();
+                            lanzarConfetti();
+                        } else {
+                            const estadoEl = document.getElementById('estado-juego');
+                            if(estadoEl) {
+                                estadoEl.innerHTML = `<p style="margin: 0; color: #f44336;">❌ Juego finalizado. Ganador: ${data.tarjeta.nombre}</p>`;
+                            }
+                        }
+                    });
+            };
+    
+            // Arrancamos el intento de conexión
+            iniciarConexion();
+    
+    
+            // --- 4. FUNCIONES AUXILIARES ---
+    
+            function mostrarUltimoNumero(numero) {
+                const container = document.getElementById('ultimo-numero-container');
+                const elemento = document.getElementById('ultimo-numero');
+                if(!container || !elemento) return;
+    
+                container.style.display = 'block';
+                elemento.textContent = numero;
+                elemento.style.animation = 'none';
+                // Truco para reiniciar la animación CSS
+                elemento.offsetHeight; 
                 elemento.style.animation = 'pulse 1s ease-in-out';
-            }, 10);
-        }
-
-        function marcarNumero(numero) {
-            if (juegoFinalizado || numerosMarcados.includes(numero)) return;
-
-            numerosMarcados.push(numero);
-
-            // Marcar visualmente
-            const bola = document.querySelector(`[data-numero="${numero}"]`);
-            if (bola) {
-                bola.classList.add('marcado');
             }
-
-            // Actualizar contador
-            document.getElementById('contador-marcados').textContent = `${numerosMarcados.length}/10`;
-
-            // Verificar si ganó
-            if (numerosMarcados.length === 10) {
-                verificarGanador();
-            }
-        }
-
-        function verificarGanador() {
-            fetch(`/bingo/juego/${codigoJuego}/tarjeta/${tarjetaId}/verificar`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+    
+            function marcarNumero(numero) {
+                if (juegoFinalizado || numerosMarcados.includes(numero)) return;
+    
+                numerosMarcados.push(numero);
+    
+                // Marcar visualmente
+                const bola = document.querySelector(`[data-numero="${numero}"]`);
+                if (bola) {
+                    bola.classList.add('marcado');
                 }
-            })
+    
+                // Actualizar contador
+                const contador = document.getElementById('contador-marcados');
+                if(contador) contador.textContent = `${numerosMarcados.length}/10`;
+    
+                // Verificar si ganó (Automático)
+                if (numerosMarcados.length === 10) {
+                    verificarGanador();
+                }
+            }
+    
+            function actualizarEstadoUI(enProgreso) {
+                const el = document.getElementById('estado-juego');
+                if(el && enProgreso) {
+                    el.innerHTML = '<p style="margin: 0; color: #4caf50;">✅ Juego en progreso...</p>';
+                }
+            }
+    
+            function verificarGanador() {
+                // Evitar múltiples envíos si ya ganó localmente
+                if(juegoFinalizado) return;
+    
+                fetch(`/bingo/juego/${codigoJuego}/tarjeta/${tarjetaId}/verificar`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                })
                 .then(response => response.json())
                 .then(data => {
                     if (data.ganador) {
-                        console.log('¡Ganaste!');
+                        console.log('¡Verificación exitosa en servidor!');
+                        // No hace falta hacer nada más aquí, el evento .juego.ganado
+                        // llegará por WebSocket y activará el modal y confeti.
                     }
                 })
-                .catch(error => console.error('Error:', error));
-        }
-
-        function mostrarModalGanador() {
-            const modal = document.getElementById('ganador-modal');
-            modal.classList.add('activo');
-        }
-
-        function lanzarConfetti() {
-            for (let i = 0; i < 100; i++) {
-                setTimeout(() => {
-                    const confetti = document.createElement('div');
-                    confetti.className = 'confetti';
-                    confetti.style.left = Math.random() * 100 + '%';
-                    confetti.style.background = `hsl(${Math.random() * 360}, 100%, 50%)`;
-                    confetti.style.animationDelay = Math.random() * 3 + 's';
-                    document.body.appendChild(confetti);
-
-                    setTimeout(() => confetti.remove(), 3000);
-                }, i * 30);
+                .catch(error => console.error('Error verificación:', error));
             }
-        }
-
-        // Click manual en las bolas (opcional, para testing)
-        document.querySelectorAll('.numero-bola').forEach(bola => {
-            bola.addEventListener('click', function () {
-                if (!juegoFinalizado) {
-                    const numero = parseInt(this.dataset.numero);
-                    // Solo permite marcar si ya fue sorteado
-                    console.log('Click en número:', numero);
+    
+            function mostrarModalGanador() {
+                const modal = document.getElementById('ganador-modal');
+                if(modal) modal.classList.add('activo');
+            }
+    
+            function lanzarConfetti() {
+               // (Tu código de confetti está perfecto, lo dejé igual)
+               for (let i = 0; i < 100; i++) {
+                    setTimeout(() => {
+                        const confetti = document.createElement('div');
+                        confetti.className = 'confetti';
+                        confetti.style.left = Math.random() * 100 + '%';
+                        confetti.style.background = `hsl(${Math.random() * 360}, 100%, 50%)`;
+                        confetti.style.animationDelay = Math.random() * 3 + 's';
+                        document.body.appendChild(confetti);
+                        setTimeout(() => confetti.remove(), 3000);
+                    }, i * 30);
                 }
-            });
+            }
         });
     </script>
 </body>
