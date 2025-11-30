@@ -158,7 +158,8 @@
         <div class="panel" style="text-align: center;">
             <h1 style="color: #11998e; font-size: 48px; margin: 0;">🎰 CONTROL DE BINGO 🎰</h1>
             <p style="font-size: 20px; color: #666; margin: 10px 0;">Código del Juego:
-                <strong>{{ $juego->codigo }}</strong></p>
+                <strong>{{ $juego->codigo }}</strong>
+            </p>
             <p style="color: #999;">Comparte este código con los jugadores para que se unan</p>
             <div style="margin-top: 15px;">
                 <a href="/bingo/tarjeta/{{ $juego->codigo }}" target="_blank"
@@ -225,67 +226,96 @@
     </div>
 
     <script>
-        const codigoJuego = '{{ $juego->codigo }}';
-        let numerosSorteados = @json($juego->numeros_sorteados ?? []);
-        let juegoFinalizado = {{ $juego->estado === 'finalizado' ? 'true' : 'false' }};
-
-        // Cargar números ya sorteados si existen
-        if (numerosSorteados.length > 0) {
-            document.getElementById('mensaje-inicial').style.display = 'none';
-            document.getElementById('bola-container').style.display = 'block';
-            document.getElementById('bola-numero').textContent = numerosSorteados[numerosSorteados.length - 1];
-            actualizarGridSorteados();
-        }
-
-        if (juegoFinalizado) {
-            document.getElementById('btn-sortear').disabled = true;
-            document.getElementById('btn-sortear').textContent = '🏁 JUEGO FINALIZADO';
-        }
-
-        // Escuchar eventos de WebSocket
-        Echo.channel(`bingo.${codigoJuego}`)
-            .listen('.numero.sorteado', (data) => {
-                console.log('Número sorteado recibido:', data);
-                mostrarNumeroSorteado(data.numero);
-                numerosSorteados = data.numerosSorteados;
+        document.addEventListener("DOMContentLoaded", () => {
+            // --- 1. DATOS INICIALES ---
+            const codigoJuego = '{{ $juego->codigo }}';
+            // Convertimos a array de JS
+            let numerosSorteados = @json($juego->numeros_sorteados ?? []); 
+            let juegoFinalizado = {{ $juego->estado === 'finalizado' ? 'true' : 'false' }};
+    
+            // --- 2. ESTADO INICIAL ---
+            if (numerosSorteados.length > 0) {
+                const ultimo = numerosSorteados[numerosSorteados.length - 1];
+                // Simulamos que se acaba de mostrar el último para inicializar la vista
+                mostrarNumeroSorteado(ultimo, false); // false = sin animación
                 actualizarGridSorteados();
-            })
-            .listen('.juego.ganado', (data) => {
-                console.log('Juego ganado:', data);
-                juegoFinalizado = true;
-                document.getElementById('btn-sortear').disabled = true;
-                document.getElementById('btn-sortear').textContent = '🏁 JUEGO FINALIZADO';
-                document.getElementById('estado-juego').textContent = '✅ Finalizado';
-
-                // Mostrar anuncio de ganador
-                const anuncio = document.getElementById('ganador-anuncio');
-                const info = document.getElementById('ganador-info');
-                info.textContent = `Ganador: ${data.tarjeta.nombre} (Tarjeta: ${data.tarjeta.codigo})`;
-                anuncio.style.display = 'block';
-            });
-
-        function sortearNumero() {
-            if (juegoFinalizado) return;
-
-            const boton = document.getElementById('btn-sortear');
-            boton.disabled = true;
-            boton.textContent = '🎲 Sorteando...';
-
-            fetch(`/bingo/juego/${codigoJuego}/sortear`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+            }
+    
+            if (juegoFinalizado) {
+                bloquearJuego();
+            }
+    
+            // Definir config global por si echo.js lo necesita (opcional)
+            window.juegoConfig = {
+                codigoJuego: codigoJuego,
+                numerosSorteados: numerosSorteados,
+                juegoFinalizado: juegoFinalizado,
+            };
+    
+            // --- 3. CONEXIÓN WEBSOCKET (La parte que faltaba) ---
+            const iniciarConexionControl = () => {
+                if (!window.Echo) {
+                    console.log("[Control] Esperando a Echo...");
+                    setTimeout(iniciarConexionControl, 100);
+                    return;
                 }
-            })
-                .then(response => response.json())
+    
+                console.log("[Control] Escuchando canal:", `bingo.${codigoJuego}`);
+    
+                window.Echo.channel(`bingo.${codigoJuego}`)
+                    .listen('.numero.sorteado', (data) => {
+                        console.log("⚡ Evento Recibido:", data);
+                        
+                        // 1. Agregar al array local
+                        const nuevoNumero = parseInt(data.numero);
+                        
+                        // Evitar duplicados visuales si el evento llega dos veces
+                        if (!numerosSorteados.includes(nuevoNumero)) {
+                            numerosSorteados.push(nuevoNumero);
+                            
+                            // 2. Actualizar UI
+                            mostrarNumeroSorteado(nuevoNumero, true); // true = con animación
+                            actualizarGridSorteados();
+                        }
+                        
+                        // 3. Reactivar botón si estaba deshabilitado por el fetch
+                        const btn = document.getElementById('btn-sortear');
+                        if(btn) {
+                            btn.disabled = false;
+                            btn.textContent = '🎲 SORTEAR NÚMERO';
+                        }
+                    })
+                    .listen('.juego.ganado', (data) => {
+                        console.log("Ganador detectado:", data);
+                        juegoFinalizado = true;
+                        bloquearJuego();
+                        alert(`¡JUEGO FINALIZADO!\nGanador: ${data.tarjeta.nombre}`);
+                    });
+            };
+    
+            iniciarConexionControl();
+    
+            // --- 4. FUNCIÓN SORTEAR (Fetch) ---
+            // Hacemos global la función para que el onclick del HTML funcione
+            window.sortearNumero = function() {
+                if (juegoFinalizado) return;
+    
+                const boton = document.getElementById('btn-sortear');
+                boton.disabled = true;
+                boton.textContent = '🎲 Sorteando...';
+    
+                fetch(`/bingo/juego/${codigoJuego}/sortear`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                    }
+                })
+                .then(res => res.json())
                 .then(data => {
-                    console.log('Número sorteado:', data);
-                    // El WebSocket se encargará de actualizar la UI
-                    setTimeout(() => {
-                        boton.disabled = false;
-                        boton.textContent = '🎲 SORTEAR NÚMERO';
-                    }, 1000);
+                    console.log('Orden enviada. Esperando WebSocket...', data);
+                    // NO actualizamos la UI aquí. Esperamos al evento .listen de arriba
+                    // para asegurar que todos vean lo mismo al mismo tiempo.
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -293,57 +323,78 @@
                     boton.disabled = false;
                     boton.textContent = '🎲 SORTEAR NÚMERO';
                 });
-        }
-
-        function mostrarNumeroSorteado(numero) {
-            // Ocultar mensaje inicial
-            document.getElementById('mensaje-inicial').style.display = 'none';
-
-            // Mostrar bola
-            const bolaContainer = document.getElementById('bola-container');
-            const bolaNumerElement = document.getElementById('bola-numero');
-
-            bolaContainer.style.display = 'block';
-            bolaNumerElement.style.animation = 'none';
-            bolaNumerElement.textContent = numero;
-
-            // Re-trigger animation
-            setTimeout(() => {
-                bolaNumerElement.style.animation = 'aparecer 0.5s ease';
-            }, 10);
-
-            // Actualizar estadísticas
-            document.getElementById('ultimo-stat').textContent = numero;
-            document.getElementById('total-sorteados').textContent = numerosSorteados.length;
-            document.getElementById('estado-juego').textContent = '▶️ Jugando';
-        }
-
-        function actualizarGridSorteados() {
-            const grid = document.getElementById('grid-sorteados');
-            const sinNumeros = document.getElementById('sin-numeros');
-
-            if (numerosSorteados.length === 0) {
-                sinNumeros.style.display = 'block';
-                grid.innerHTML = '';
-                return;
-            }
-
-            sinNumeros.style.display = 'none';
-            grid.innerHTML = '';
-
-            numerosSorteados.forEach((numero, index) => {
-                const div = document.createElement('div');
-                div.className = 'numero-sorteado';
-                if (index === numerosSorteados.length - 1) {
-                    div.classList.add('ultimo');
+            };
+    
+            // --- 5. FUNCIONES DE UI ---
+    
+            function mostrarNumeroSorteado(numero, animar = true) {
+                const msgInicial = document.getElementById('mensaje-inicial');
+                if(msgInicial) msgInicial.style.display = 'none';
+    
+                const bolaContainer = document.getElementById('bola-container');
+                const bolaNumerElement = document.getElementById('bola-numero');
+    
+                if(bolaContainer) bolaContainer.style.display = 'block';
+                
+                if(bolaNumerElement) {
+                    bolaNumerElement.textContent = numero;
+                    
+                    if(animar) {
+                        bolaNumerElement.style.animation = 'none';
+                        bolaNumerElement.offsetHeight; // Trigger reflow
+                        bolaNumerElement.style.animation = 'aparecer 0.5s ease';
+                    }
                 }
-                div.textContent = numero;
-                grid.appendChild(div);
-            });
-
-            // Actualizar contador
-            document.getElementById('total-sorteados').textContent = numerosSorteados.length;
-        }
+    
+                // Actualizar estadísticas simples
+                const statUltimo = document.getElementById('ultimo-stat');
+                const statTotal = document.getElementById('total-sorteados');
+                const statEstado = document.getElementById('estado-juego');
+    
+                if(statUltimo) statUltimo.textContent = numero;
+                if(statTotal) statTotal.textContent = numerosSorteados.length;
+                if(statEstado) statEstado.textContent = '▶️ Jugando';
+            }
+    
+            function actualizarGridSorteados() {
+                const grid = document.getElementById('grid-sorteados');
+                const sinNumeros = document.getElementById('sin-numeros');
+    
+                if (!grid) return;
+    
+                if (numerosSorteados.length === 0) {
+                    if(sinNumeros) sinNumeros.style.display = 'block';
+                    grid.innerHTML = '';
+                    return;
+                }
+    
+                if(sinNumeros) sinNumeros.style.display = 'none';
+                grid.innerHTML = '';
+    
+                // Renderizar grid
+                numerosSorteados.forEach((numero, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'numero-sorteado';
+                    // Efecto visual para el último
+                    if (index === numerosSorteados.length - 1) {
+                        div.classList.add('ultimo');
+                    }
+                    div.textContent = numero;
+                    grid.appendChild(div);
+                });
+            }
+    
+            function bloquearJuego() {
+                const btn = document.getElementById('btn-sortear');
+                if(btn) {
+                    btn.disabled = true;
+                    btn.textContent = '🏁 JUEGO FINALIZADO';
+                    btn.classList.add('opacity-50', 'cursor-not-allowed');
+                }
+                const estado = document.getElementById('estado-juego');
+                if(estado) estado.textContent = '🏁 Finalizado';
+            }
+        });
     </script>
 </body>
 

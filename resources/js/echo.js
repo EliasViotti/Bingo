@@ -1,32 +1,22 @@
-import './bootstrap';
-import Echo from 'laravel-echo';
-import Pusher from 'pusher-js';
+document.addEventListener("DOMContentLoaded", () => {
+    if (!window.Echo) {
+        console.error("[echo.js] Echo no está inicializado");
+        return;
+    }
+    const { codigoJuego, numerosSorteados, juegoFinalizado } =
+        window.juegoConfig ?? {};
+    if (!codigoJuego) {
+        console.error("[echo.js] Falta codigoJuego");
+        return;
+    }
 
-window.Pusher = Pusher;
-
-window.Echo = new Echo({
-    broadcaster: 'reverb',
-    key: import.meta.env.VITE_REVERB_APP_KEY,
-    wsHost: import.meta.env.VITE_REVERB_HOST,
-    wsPort: import.meta.env.VITE_REVERB_PORT ?? 80,
-    wssPort: import.meta.env.VITE_REVERB_PORT ?? 443,
-    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
-    enabledTransports: ['ws', 'wss'],
+    window.Echo.channel(`bingo.${codigoJuego}`)
+        .listen(".numero.sorteado", (data) => {
+            console.log("Número sorteado recibido:", data);
+            // TODO: actualizar tu UI aquí: bola, grid, stats…
+        })
+        .listen(".juego.ganado", (data) => {
+            console.log("Juego ganado:", data);
+            // TODO: finalizar UI aquí…
+        });
 });
-
-/*
-import Echo from 'laravel-echo';
-
-import Pusher from 'pusher-js';
-window.Pusher = Pusher;
-
-window.Echo = new Echo({
-    broadcaster: 'reverb',
-    key: import.meta.env.VITE_REVERB_APP_KEY,
-    wsHost: import.meta.env.VITE_REVERB_HOST,
-    wsPort: import.meta.env.VITE_REVERB_PORT ?? 80,
-    wssPort: import.meta.env.VITE_REVERB_PORT ?? 443,
-    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
-    enabledTransports: ['ws', 'wss'],
-});
-*/
